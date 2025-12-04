@@ -17,18 +17,6 @@ func main() {
 	queueName := "flashsale_order_queue"
 	ttlSeconds := 60
 
-	// _ = db.InitPostgres(cfg.PostgresDSN)
-	// _ = redis.NewRedis(cfg.RedisAddr)
-	// _ = mq.NewRabbitMQ(cfg.MQUrl)
-
-	// r := gin.Default()
-
-	// // health check
-	// r.GET("/health", handler.HealthHandler)
-
-	// log.Printf("🚀 API Server running on :%s\n", cfg.ServerPort)
-	// r.Run(":" + cfg.ServerPort)
-
 	// init Redis
 	err := cache.InitRedis(cfg.RedisHost, cfg.RedisPort, cfg.RedisPassword, 0)
 	if err != nil {
