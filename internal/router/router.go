@@ -1,6 +1,7 @@
 package router
 
 import (
+	"flashsale/internal/cache"
 	"flashsale/internal/handler"
 	"flashsale/internal/middleware"
 
@@ -10,19 +11,28 @@ import (
 func SetupRouter(orderHandler *handler.OrderHandler) *gin.Engine {
 	r := gin.Default()
 
-	// global limiter
-	r.Use(middleware.GlobalRateLimit(1)) // cap 2000 req/s
+	// load token bucket lua
+	tb, err := cache.LoadTokenBucketLua("internal/cache/lua/ratelimit_token_bucket.lua")
+	if err != nil {
+		panic(err)
+	}
 
-	// IP limiter globally
-	r.Use(middleware.IPRateLimit())
+	middleware.InitTokenBucketLimiter(tb)
 
 	// health check
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	// r.GET("/health", func(c *gin.Context) {
+	// 	c.JSON(200, gin.H{"status": "ok"})
+	// })
 
 	// Precheck endpoint
-	r.POST("/flashsale/precheck", middleware.UserRateLimit(), orderHandler.PreCheck)
+	// r.POST("/flashsale/precheck", middleware.UserRateLimit(), orderHandler.PreCheck)
+
+	flash := r.Group("/flashsale")
+	{
+		flash.POST("/precheck",
+			middleware.UserTokenBucket(5, 3), // burst: 5, refill: 3 tokens/sec
+			orderHandler.PreCheck)
+	}
 
 	// TODO; add endpoints /flashsale/queue, /flashsale/stock
 	return r

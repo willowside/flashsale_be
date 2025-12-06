@@ -70,61 +70,6 @@ func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID s
 	return &PrecheckResult{Status: "queued", Message: "precheck success, order queued"}, nil
 }
 
-// // PreCheckAndQueue, redis & lua PreCheck, Pass: Push request to queue (async)
-// func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID string) (*PrecheckResult, error) {
-// 	// 1. call redis lua
-// 	res, err := cache.FlashSalePreCheck(productID, userID)
-// 	if err != nil {
-// 		return &PrecheckResult{
-// 			Status:  "error",
-// 			Message: fmt.Sprintf("precheck error: %v", err),
-// 		}, err
-// 	}
-// 	// 2. check lua callback
-// 	if res.Success {
-// 		// res.Reason is lua callback strings, eg. OUT_OF_STOCK, USER_ALREADY_PURCHASED
-// 		switch res.Reason {
-// 		case "OUT_OF_STOCK":
-// 			return &PrecheckResult{
-// 				Status:  "no_stock",
-// 				Message: "uproduct out of stock",
-// 			}, nil
-// 		case "USER_ALREADY_PURCHASED":
-// 			return &PrecheckResult{
-// 				Status:  "already_purchased",
-// 				Message: "user already purchased",
-// 			}, nil
-// 			// default:
-// 			// 	return &PrecheckResult{
-// 			// 		Status:  "error",
-// 			// 		Message: "precheck failed: " + res.Reason,
-// 			// 	}, nil
-
-// 		}
-// 	}
-// 	// 3. precheck Success: push req to MQ
-// 	if s.publisher == nil {
-// 		return &PrecheckResult{
-// 			Status:  "queued",
-// 			Message: "precheck success, but no publisher configuired",
-// 		}, nil
-// 	}
-// 	// 4. if publish failed, compensate redis, unlock user & add stock back
-// 	// 4-1. main || compensator do compensate; only report error here
-// 	if s.publisher.PublishOrder(ctx, userID, productID); err != nil {
-// 		return &PrecheckResult{
-// 			Status:  "error",
-// 			Message: fmt.Sprintf("failed to enqueue order: %v", err),
-// 		}, err
-// 	}
-
-// 	return &PrecheckResult{
-// 		Status:  "queued",
-// 		Message: "precheck success, order queued",
-// 	}, nil
-
-// }
-
 func NewOrderService(pub OrderPublisher, lua *cache.LuaScripts, ttlSeconds int) *OrderService {
 	return &OrderService{
 		publisher: pub,

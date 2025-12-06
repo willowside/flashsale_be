@@ -23,6 +23,7 @@ func main() {
 		log.Fatalf("Redis init failed: %v", err)
 	}
 
+	// load precheck lua scripts
 	scripts, err := cache.LoadLuaScripts(cache.Rdb, "./scripts")
 	if err != nil {
 		log.Fatal(err)
