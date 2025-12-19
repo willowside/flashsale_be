@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"flashsale/internal/cache"
-	"flashsale/internal/queue"
+	"flashsale/internal/repository"
 	"flashsale/internal/worker"
 	"flashsale/pkg/config"
+	"flashsale/pkg/db"
+	"flashsale/pkg/mq"
 	"log"
 	"os"
 	"os/signal"
@@ -15,20 +17,24 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 	queueName := "flashsale_order_queue"
-
+	// init Postgres
+	if err := db.InitPostgresDB(cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDBName, cfg.PostgresSSLMode); err != nil {
+		log.Fatalf("Postgres init failed: %v", err)
+	}
 	// init redis
 	if err := cache.InitRedis(cfg.RedisHost, cfg.RedisPort, "", 0); err != nil {
 		log.Fatalf("redis init failed: %v", err)
 	}
 	// load lua scripts
-	luaScripts, err := cache.LoadLuaScripts(cache.Rdb, "./scripts")
+	scripts, err := cache.LoadLuaScripts(cache.Rdb, "./scripts")
 	if err != nil {
-		log.Fatalf("load lua failed: %v", err)
+		log.Fatal(err)
 	}
-	cache.SetLuaScripts(luaScripts)
+
+	cache.SetLuaScripts(scripts)
 
 	// Init RabbitMQ
-	mqClient, err := queue.NewRabbitMQClient(
+	mqClient, err := mq.NewRabbitMQClient(
 		cfg.MQUrl,
 		queueName,
 	)
@@ -43,7 +49,8 @@ func main() {
 		log.Fatalf("consume failed: %v", err)
 	}
 
-	orderProcessor := worker.NewOrderProcessor(cache.Rdb, luaScripts)
+	repo := repository.NewOrderRepository(db.Pool, "postgres")
+	orderProcessor := worker.NewOrderProcessor(repo, scripts)
 	log.Println("worker started, awaiting messages...")
 
 	// graceful shutdown

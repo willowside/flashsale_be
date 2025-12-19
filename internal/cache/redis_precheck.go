@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-var luaScripts *LuaScripts // store loaded script SHA globally
+var LuaSHAScripts *LuaScripts // store loaded script SHA globally
 
 type PreCheckResult struct {
 	Success bool
@@ -15,28 +15,28 @@ type PreCheckResult struct {
 
 // Called by main.go after loading scripts
 func SetLuaScripts(s *LuaScripts) {
-	luaScripts = s
+	LuaSHAScripts = s
 }
 
 func FlashSalePreCheck(productID, userID string) (*PreCheckResult, error) {
 	if Rdb == nil {
 		return nil, errors.New("redis not init")
 	}
-	if luaScripts == nil || luaScripts.PrecheckSHA == "" {
+	if LuaSHAScripts == nil || LuaSHAScripts.PrecheckSHA.SHA == "" {
 		return nil, errors.New("lua scripts not loaded")
 	}
 
 	stockKey := fmt.Sprintf("flashsale:stock:%s", productID)
 	// store purchasers set per product
-	userSetKey := fmt.Sprintf("flashsale:users:%s", productID)
+	userSetKey := fmt.Sprintf("flashsale:purchased:%s", productID)
 
 	// Use SHA instead of raw Lua file
-	// EvalSha : KEYS=[stockKey, userSetKey], ARGV=[userID, ttlSeconds(optional)]
+	// EvalSha : KEYS=[stockKey, userSetKey], ARGV=[userID(,ttlSeconds)]
 	ctx := context.Background()
 	res, err := Rdb.EvalSha(ctx,
-		luaScripts.PrecheckSHA,
+		LuaSHAScripts.PrecheckSHA.SHA,
 		[]string{stockKey, userSetKey},
-		userID, 60, productID,
+		userID,
 	).Result()
 	if err != nil {
 		return nil, err

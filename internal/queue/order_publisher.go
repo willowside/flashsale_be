@@ -3,28 +3,25 @@ package queue
 import (
 	"context"
 	"encoding/json"
-	"flashsale/internal/service"
+	"flashsale/internal/domain"
+	"flashsale/internal/service/serviceiface"
+	"flashsale/pkg/mq"
 	"fmt"
 	"time"
 )
 
-type OrderMessage struct {
-	UserID    string `json:"user_id"`
-	ProductID string `json:"product_id"`
-	Timestamp int64  `json:"timestamp"`
-}
-
 type RabbitMQOrderPublisher struct {
-	client *RabbitMQClient
+	Client *mq.RabbitMQClient
 }
 
-func NewRabbitMQOrderPublisher(client *RabbitMQClient) service.OrderPublisher {
-	return &RabbitMQOrderPublisher{client: client}
+func NewRabbitMQOrderPublisher(client *mq.RabbitMQClient) serviceiface.OrderPublisher {
+	return &RabbitMQOrderPublisher{Client: client}
 }
 
-func (p *RabbitMQOrderPublisher) PublishOrder(ctx context.Context, userID, productID string) error {
+func (p *RabbitMQOrderPublisher) PublishOrder(ctx context.Context, orderID, userID, productID string) error {
 	// 1. prepare msg content
-	msg := OrderMessage{
+	msg := domain.OrderMessage{
+		OrderID:   orderID,
 		UserID:    userID,
 		ProductID: productID,
 		Timestamp: NowUnix(),
@@ -35,24 +32,7 @@ func (p *RabbitMQOrderPublisher) PublishOrder(ctx context.Context, userID, produ
 		return fmt.Errorf("failed to marshal order msg: %w", err)
 	}
 
-	return p.client.Publish(ctx, body)
-
-	// // 3. write into RabbitMQ
-	// err = p.client.GetChannel().PublishWithContext(
-	// 	ctx,
-	// 	"",
-	// 	p.client.queueName,
-	// 	false,
-	// 	false,
-	// 	amqp091.Publishing{
-	// 		ContentType: "application/json",
-	// 		Body:        body,
-	// 	},
-	// )
-	// if err != nil {
-	// 	fmt.Errorf("failed to publish order: %w", err)
-	// }
-	// return nil
+	return p.Client.Publish(ctx, body)
 }
 
 // time util

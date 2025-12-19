@@ -8,16 +8,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(orderHandler *handler.OrderHandler) *gin.Engine {
+func SetupRouter(orderHandler *handler.OrderHandler, orderQueueHandler *handler.OrderQueueHandler, stockHandler *handler.StockHandler, resultHandler *handler.OrderResultHandler) *gin.Engine {
 	r := gin.Default()
 
-	// load token bucket lua
-	tb, err := cache.LoadTokenBucketLua("internal/cache/lua/ratelimit_token_bucket.lua")
+	// // load token bucket lua
+	// tb, err := cache.LoadTokenBucketLua("./scripts/rate_limit_token_bucket.lua")
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// middleware.InitTokenBucketLimiter(tb)
+
+	// load hybrid lua
+	hl, err := cache.LoadHybridLimiter(cache.Rdb, "./scripts/rate_limit_hybrid.lua")
 	if err != nil {
 		panic(err)
 	}
-
-	middleware.InitTokenBucketLimiter(tb)
+	middleware.InitHybridLimiter(hl)
 
 	// health check
 	// r.GET("/health", func(c *gin.Context) {
@@ -30,8 +37,19 @@ func SetupRouter(orderHandler *handler.OrderHandler) *gin.Engine {
 	flash := r.Group("/flashsale")
 	{
 		flash.POST("/precheck",
-			middleware.UserTokenBucket(5, 3), // burst: 5, refill: 3 tokens/sec
+			middleware.UserHybridLimiter(20, 10, 50, 5),
+			// middleware.UserTokenBucket(5, 3), // burst: 5, refill: 3 tokens/sec
 			orderHandler.PreCheck)
+		flash.POST("/queue",
+			middleware.UserHybridLimiter(20, 10, 50, 5),
+			orderQueueHandler.Enqueue)
+		flash.POST("/stock/:product_id",
+			middleware.UserHybridLimiter(20, 10, 50, 5),
+			stockHandler.GetStock)
+		flash.GET("/result/:order_id",
+			middleware.UserHybridLimiter(5, 2, 10, 1),
+			resultHandler.GetResult)
+
 	}
 
 	// TODO; add endpoints /flashsale/queue, /flashsale/stock

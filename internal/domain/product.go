@@ -1,4 +1,4 @@
-package product
+package domain
 
 type Product struct {
 	ID        int64  `db:"id"`

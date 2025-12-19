@@ -12,8 +12,8 @@ import (
 )
 
 type LuaScripts struct {
-	PrecheckSHA string
-	FinalizeSHA string
+	PrecheckSHA *LuaScript
+	FinalizeSHA *LuaScript
 }
 
 func LoadLuaScripts(rdb *redis.Client, scriptDir string) (*LuaScripts, error) {
@@ -32,9 +32,12 @@ func LoadLuaScripts(rdb *redis.Client, scriptDir string) (*LuaScripts, error) {
 		return nil, fmt.Errorf("failed to load finalize lua: %w", &err)
 	}
 
+	precheckScript := NewLuaScript(precheck)
+	finalizeScript := NewLuaScript(finalize)
+
 	return &LuaScripts{
-		PrecheckSHA: precheck,
-		FinalizeSHA: finalize,
+		PrecheckSHA: precheckScript,
+		FinalizeSHA: finalizeScript,
 	}, nil
 
 }

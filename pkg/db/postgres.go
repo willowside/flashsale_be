@@ -1,16 +1,32 @@
 package db
 
 import (
-	"os"
+	"context"
+	"fmt"
+	"time"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func InitPostgres() (*sqlx.DB, error) {
-	dsn := os.Getenv("POSTGRES_DSN")
-	db, err := sqlx.Connect("postgres", dsn)
+var Pool *pgxpool.Pool
+
+func InitPostgresDB(host, port, user, password, db_name, ssl_mode string) error {
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s", user, password, host, port, db_name, ssl_mode)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 1. create pgx pool
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to create pgx pool: %w", err)
 	}
-	return db, nil
+
+	// 2. test connection
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("failed to ping postgres: %w", err)
+	}
+
+	Pool = pool
+	return nil
 }
