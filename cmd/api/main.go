@@ -3,7 +3,7 @@ package main
 import (
 	"flashsale/internal/cache"
 	"flashsale/internal/handler"
-	"flashsale/internal/queue"
+	queue "flashsale/internal/mq"
 	"flashsale/internal/repository"
 	"flashsale/internal/router"
 	"flashsale/internal/service"
@@ -18,7 +18,7 @@ func main() {
 	cfg := config.LoadConfig()
 
 	queueName := "flashsale_order_queue"
-	ttlSeconds := 60
+	// ttlSeconds := 60
 
 	// ------ init Postgres ------
 	if err := db.InitPostgresDB(
@@ -63,19 +63,16 @@ func main() {
 	orderPublisher := queue.NewRabbitMQOrderPublisher(mqClient)
 
 	// init Service
-	orderService := service.NewOrderService(orderPublisher, scripts, ttlSeconds)
-	queueService := service.NewQueueService(cache.Rdb, orderPublisher)
+	orderService := service.NewOrderService(orderPublisher, scripts, orderRepo)
 	stockService := service.NewStockService(cache.Rdb, productRepo)
 	resultService := service.NewOrderResultService(orderRepo)
 
 	// init Router/Gin http server
 	orderHandler := handler.NewOrderHandler(orderService)
-	orderQueueHandler := handler.NewQueueHandler(queueService)
 	stockHandler := handler.NewStockHandler(stockService)
 	resultHandler := handler.NewOrderResultHandler(resultService)
 	r := router.SetupRouter(
 		orderHandler,
-		orderQueueHandler,
 		stockHandler,
 		resultHandler,
 	)

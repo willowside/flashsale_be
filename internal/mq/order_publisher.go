@@ -3,7 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
-	"flashsale/internal/domain"
+	"flashsale/internal/dto"
 	"flashsale/internal/service/serviceiface"
 	"flashsale/pkg/mq"
 	"fmt"
@@ -20,7 +20,7 @@ func NewRabbitMQOrderPublisher(client *mq.RabbitMQClient) serviceiface.OrderPubl
 
 func (p *RabbitMQOrderPublisher) PublishOrder(ctx context.Context, orderID, userID, productID string) error {
 	// 1. prepare msg content
-	msg := domain.OrderMessage{
+	msg := dto.OrderMessage{
 		OrderID:   orderID,
 		UserID:    userID,
 		ProductID: productID,

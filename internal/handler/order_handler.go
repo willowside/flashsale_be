@@ -53,8 +53,9 @@ func (h *OrderHandler) PreCheck(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":  result.Status,
-		"message": result.Message,
+		"status":   result.Status,
+		"message":  result.Message,
+		"order_id": result.OrderID,
 	})
 
 }

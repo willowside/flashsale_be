@@ -2,6 +2,14 @@ package domain
 
 import "time"
 
+type OrderStatus string
+
+const (
+	OrderPending OrderStatus = "pending"
+	OrderSuccess OrderStatus = "success"
+	OrderFailed  OrderStatus = "failed"
+)
+
 type Order struct {
 	ID          int64      `db:"id"`
 	OrderNo     string     `db:"order_no"` // Added
@@ -13,11 +21,4 @@ type Order struct {
 	CreatedAt   time.Time  `db:"created_at"`
 	PaidAt      *time.Time `db:"paid_at"`     // Use pointer for nullable columns
 	CanceledAt  *time.Time `db:"canceled_at"` // Use pointer for nullable columns
-}
-
-type OrderMessage struct {
-	OrderID   string `json:"order_id"`
-	UserID    string `json:"user_id"`
-	ProductID string `json:"product_id"`
-	Timestamp int64  `json:"timestamp"`
 }

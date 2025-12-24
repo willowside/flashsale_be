@@ -7,6 +7,7 @@ import (
 	"flashsale/internal/repository/repositoryiface"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -26,69 +27,71 @@ func NewOrderPGRepo(pool *pgxpool.Pool) repositoryiface.OrderRepository {
 	}
 }
 
-// insert row
-func (r *OrderPGRepo) CreateOrder(ctx context.Context, orderID, userID, productID string) error {
-	_, err := r.Pool.Exec(ctx,
-		`INSERT INTO orders(id, user_id, product_id, flash_sale_id, price, status, created_at)
-		VALUES ($4, $1, $2, 1, 1280, $3, NOW())`, userID, productID, "", orderID)
+func (r *OrderPGRepo) BeginTx(ctx context.Context) (pgx.Tx, error) {
+	return r.Pool.Begin(ctx)
+}
+
+func (r *OrderPGRepo) CreatePendingOrder(ctx context.Context, orderNo, userID, productID string) error {
+	_, err := r.Pool.Exec(ctx, `
+		INSERT INTO orders (order_no, user_id, product_id, status)
+		VALUES ($1, $2, $3, 'pending')
+		ON CONFLICT (order_no) DO NOTHING;
+	`, orderNo, userID, productID)
 	return err
 }
 
-func (r *OrderPGRepo) GetByOrderID(
-	ctx context.Context,
-	orderID string,
-) (*domain.Order, error) {
-
+func (r *OrderPGRepo) GetByOrderNo(ctx context.Context, orderNo string) (*domain.Order, error) {
 	row := r.Pool.QueryRow(ctx, `
-		SELECT
-			id,
-			user_id,
-			product_id,
-			flash_sale_id,
-			price,
-			status,
-			created_at
+		SELECT id, order_no, user_id, product_id, flash_sale_id,
+		       price, status, created_at, paid_at, canceled_at
 		FROM orders
-		WHERE id = $1`, orderID)
+		WHERE order_no = $1
+	`, orderNo)
 
 	var o domain.Order
 	err := row.Scan(
 		&o.ID,
+		&o.OrderNo,
 		&o.UserID,
 		&o.ProductID,
 		&o.FlashSaleID,
 		&o.Price,
 		&o.Status,
 		&o.CreatedAt,
+		&o.PaidAt,
+		&o.CanceledAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-
 	return &o, nil
 }
 
 // UPDATE: reduce stock
-func (r *OrderPGRepo) ReduceStock(ctx context.Context, productID string, qty int64) (bool, error) {
+func (r *OrderPGRepo) ReduceStockTx(ctx context.Context, tx pgx.Tx, productID string, qty int64) (bool, error) {
 
-	res, err := r.Pool.Exec(ctx,
+	res, err := tx.Exec(ctx,
 		`UPDATE products SET stock = stock - $2 WHERE id = $1 AND stock >= $2`,
 		productID, qty)
 	if err != nil {
 		return false, err
 	}
 
-	if res.RowsAffected() == 0 {
-		return false, nil
-	}
-	return true, nil
+	return res.RowsAffected() > 0, nil
 }
 
 func (r *OrderPGRepo) GetStock(ctx context.Context, productID string) (int64, error) {
 	var stock int64
 	err := r.Pool.QueryRow(ctx,
-		`SELECT products WHERE id = $1`, productID).Scan(&stock)
+		`SELECT stock FROM products WHERE id = $1`, productID).Scan(&stock)
 	return stock, err
+}
+
+func (r *OrderPGRepo) GetOrderStatus(ctx context.Context, orderNo string) (string, error) {
+	var status string
+	err := r.Pool.QueryRow(ctx,
+		`SELECT status FROM orders WHERE order_no = $1`, orderNo).Scan(&status)
+	return status, err
 }
 
 // Redis lock, SET NX
@@ -99,5 +102,33 @@ func (r *OrderPGRepo) AcquireStockLock(ctx context.Context, key string, ttlSecon
 
 func (r *OrderPGRepo) ReleaseStockLock(ctx context.Context, key string) error {
 	_, err := cache.Rdb.Del(ctx, key).Result()
+	return err
+}
+
+func (r *OrderPGRepo) MarkOrderSuccessTx(ctx context.Context, tx pgx.Tx, orderNo string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE orders
+		SET status = 'success', paid_at = NOW()
+		WHERE order_no = $1 AND status = 'pending'
+	`, orderNo)
+	return err
+}
+
+func (r *OrderPGRepo) MarkOrderFailedTx(ctx context.Context, tx pgx.Tx, orderNo string, reason string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE orders
+		SET status = 'failed', canceled_at = NOW()
+		WHERE order_no = $1 AND status = 'pending'
+	`, orderNo)
+	return err
+}
+
+func (r *OrderPGRepo) MarkOrderFailed(ctx context.Context, orderNo string, reason string) error {
+	_, err := r.Pool.Exec(ctx, `
+		UPDATE orders
+		SET status = 'failed', canceled_at = NOW()
+		WHERE order_no = $1
+		  AND status = 'pending'
+	`, orderNo)
 	return err
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(orderHandler *handler.OrderHandler, orderQueueHandler *handler.OrderQueueHandler, stockHandler *handler.StockHandler, resultHandler *handler.OrderResultHandler) *gin.Engine {
+func SetupRouter(orderHandler *handler.OrderHandler, stockHandler *handler.StockHandler, resultHandler *handler.OrderResultHandler) *gin.Engine {
 	r := gin.Default()
 
 	// // load token bucket lua
@@ -40,9 +40,6 @@ func SetupRouter(orderHandler *handler.OrderHandler, orderQueueHandler *handler.
 			middleware.UserHybridLimiter(20, 10, 50, 5),
 			// middleware.UserTokenBucket(5, 3), // burst: 5, refill: 3 tokens/sec
 			orderHandler.PreCheck)
-		flash.POST("/queue",
-			middleware.UserHybridLimiter(20, 10, 50, 5),
-			orderQueueHandler.Enqueue)
 		flash.POST("/stock/:product_id",
 			middleware.UserHybridLimiter(20, 10, 50, 5),
 			stockHandler.GetStock)

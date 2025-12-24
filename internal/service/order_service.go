@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"flashsale/internal/cache"
+	"flashsale/internal/repository/repositoryiface"
 	"flashsale/internal/service/serviceiface"
 	"fmt"
 
@@ -31,35 +32,52 @@ type PrecheckResult struct {
 // OrderService: Precheck logic + put request into Queue
 type OrderService struct {
 	lua       *cache.LuaScripts
+	repo      repositoryiface.OrderRepository
 	publisher serviceiface.OrderPublisher
-	ttlSec    int // ttl for per user lock (DI from config or main)
+}
+
+func NewOrderService(pub serviceiface.OrderPublisher, lua *cache.LuaScripts, repo repositoryiface.OrderRepository) *OrderService {
+	return &OrderService{
+		repo:      repo,
+		publisher: pub,
+		lua:       lua,
+	}
 }
 
 func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID string) (*PrecheckResult, error) {
+	// 1. redis precheck
 	res, err := cache.FlashSalePreCheck(productID, userID)
 	if err != nil {
-		return &PrecheckResult{Status: "error", Message: fmt.Sprintf("precheck error: %v", err)}, err
+		return &PrecheckResult{Status: "error", Message: err.Error()}, err
 	}
 
 	if !res.Success {
-		switch res.Reason {
-		case "OUT_OF_STOCK", "STOCK_NOT_FOUND":
-			return &PrecheckResult{Status: "no_stock", Message: "product out of stock"}, nil
-		case "USER_ALREADY_PURCHASED", "USER_ALREADY_BOUGHT":
-			return &PrecheckResult{Status: "already_purchased", Message: "user already purchased"}, nil
-		default:
-			return &PrecheckResult{Status: "error", Message: "precheck failed: " + res.Reason}, nil
-		}
-	}
+		return &PrecheckResult{
+			Status:  res.Reason,
+			Message: "precheck failed",
+		}, nil
 
-	if s.publisher == nil {
-		return &PrecheckResult{Status: "queued", Message: "precheck success, dev-mode no publisher"}, nil
+		// switch res.Reason {
+		// case "OUT_OF_STOCK", "STOCK_NOT_FOUND":
+		// 	return &PrecheckResult{Status: "no_stock", Message: "product out of stock"}, nil
+		// case "USER_ALREADY_PURCHASED", "USER_ALREADY_BOUGHT":
+		// 	return &PrecheckResult{Status: "already_purchased", Message: "user already purchased"}, nil
+		// default:
+		// 	return &PrecheckResult{Status: "error", Message: "precheck failed: " + res.Reason}, nil
+		// }
 	}
-
+	// 2. gen OrderID
 	orderID := uuid.New().String()
 
+	// 3. create PENDING order in DB
+	err = s.repo.CreatePendingOrder(ctx, orderID, userID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("create pending order failed: %w", err)
+	}
+
+	// 4. publish MQ
 	if err := s.publisher.PublishOrder(ctx, orderID, userID, productID); err != nil {
-		return &PrecheckResult{Status: "error", Message: fmt.Sprintf("failed to enqueue order: %v", err)}, err
+		return nil, fmt.Errorf("[order service] publish order failed: %w", err)
 	}
 
 	return &PrecheckResult{
@@ -67,12 +85,4 @@ func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID s
 		OrderID: orderID,
 		Message: "precheck success, order queued",
 	}, nil
-}
-
-func NewOrderService(pub serviceiface.OrderPublisher, lua *cache.LuaScripts, ttlSeconds int) *OrderService {
-	return &OrderService{
-		publisher: pub,
-		lua:       lua,
-		ttlSec:    ttlSeconds,
-	}
 }

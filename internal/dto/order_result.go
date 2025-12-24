@@ -3,7 +3,7 @@ package dto
 import "time"
 
 type OrderResult struct {
-	OrderUID        string
+	OrderID         string
 	Status          string
 	ProcessingState string
 	FailReason      *string
