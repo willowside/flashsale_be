@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"flashsale/internal/repository/repositoryiface"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
@@ -9,6 +10,12 @@ import (
 
 type RedisStockRepository struct {
 	rdb *redis.Client
+}
+
+func NewRedisStockRepo(rdb *redis.Client) repositoryiface.RedisStockRepository {
+	return &RedisStockRepository{
+		rdb: rdb,
+	}
 }
 
 func (r *RedisStockRepository) RestoreStock(ctx context.Context, productID string, qty int) error {

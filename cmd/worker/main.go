@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -111,17 +112,21 @@ func main() {
 				default:
 					log.Printf("[DLQ] order processing failed: %v", err)
 
-					var orderMsg dto.QueueOrderReq
+					var orderMsg dto.OrderMessage
 					if err := json.Unmarshal(d.Body, &orderMsg); err != nil {
-						log.Printf("[DLQ] failed to unmarshal order msg:%w", err)
+						log.Printf("[DLQ] failed to unmarshal order message: %v", err)
 						_ = d.Ack(false)
 						continue
 					}
 
 					_ = dlqPublisher.Publish(ctx, dto.DLQMessage{
-						OrderNo: orderMsg.OrderNo,
+						OrderNo: orderMsg.OrderID,
 						Reason:  err.Error(),
-						Payload: orderMsg,
+						Payload: dto.QueueOrderReq{
+							OrderNo:   orderMsg.OrderID,
+							UserID:    orderMsg.UserID,
+							ProductID: mustParseProductID(orderMsg.ProductID),
+						},
 					})
 					_ = d.Ack(false)
 					continue
@@ -130,4 +135,9 @@ func main() {
 			_ = d.Ack(false)
 		}
 	}
+}
+
+func mustParseProductID(s string) int64 {
+	id, _ := strconv.ParseInt(s, 10, 64)
+	return id
 }

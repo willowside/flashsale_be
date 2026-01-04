@@ -8,7 +8,7 @@ import (
 )
 
 type OrderRepository interface {
-	CreatePendingOrder(ctx context.Context, orderNo, userID, productID string) error
+	CreatePendingOrder(ctx context.Context, orderNo, userID, productID string, flashSaleID int64, price int) error
 	GetOrderStatus(ctx context.Context, orderNo string) (string, error)
 
 	BeginTx(ctx context.Context) (pgx.Tx, error)

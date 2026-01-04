@@ -22,12 +22,25 @@ func NewOrderRepository(pool *pgxpool.Pool, dbType string) repositoryiface.Order
 	}
 }
 
-func NewProductRepository(pool *pgxpool.Pool, dbType string) repositoryiface.ProductRepository {
+func NewStockRepository(pool *pgxpool.Pool, dbType string) repositoryiface.StockRepository {
 
 	// The factory logic decides which concrete implementation to return.
 	switch dbType {
 	case "postgres":
-		return postgres.NewProductPGRepo(pool)
+		return postgres.NewStockPGRepo(pool)
+
+	default:
+		// Best to return an error or panic if the type is unknown, but nil works for this example.
+		return nil
+	}
+}
+
+func NewWarmUpRepository(pool *pgxpool.Pool, dbType string) repositoryiface.FlashSaleRepository {
+
+	// The factory logic decides which concrete implementation to return.
+	switch dbType {
+	case "postgres":
+		return postgres.NewFlashSalePGRepo(pool)
 
 	default:
 		// Best to return an error or panic if the type is unknown, but nil works for this example.

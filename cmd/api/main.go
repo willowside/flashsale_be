@@ -5,6 +5,7 @@ import (
 	"flashsale/internal/handler"
 	queue "flashsale/internal/mq"
 	"flashsale/internal/repository"
+	"flashsale/internal/repository/redis"
 	"flashsale/internal/router"
 	"flashsale/internal/service"
 	"flashsale/pkg/config"
@@ -55,23 +56,27 @@ func main() {
 		log.Fatalf("RabbitMQ init failed: %v", err)
 	}
 	defer mqClient.Close()
-
+	warmupDBRepo := repository.NewWarmUpRepository(db.Pool, "postgres")
+	warmupRedisRepo := redis.NewFlashSaleRedisRepo(cache.Rdb)
 	orderRepo := repository.NewOrderRepository(db.Pool, "postgres")
-	productRepo := repository.NewProductRepository(db.Pool, "postgres")
+	stockRepo := repository.NewStockRepository(db.Pool, "postgres")
 
 	// init OrderService + publisher
 	orderPublisher := queue.NewRabbitMQOrderPublisher(mqClient)
 
 	// init Service
-	orderService := service.NewOrderService(orderPublisher, scripts, orderRepo)
-	stockService := service.NewStockService(cache.Rdb, productRepo)
+	warmupService := service.NewFlashSaleWarmUpService(warmupDBRepo, warmupRedisRepo)
+	orderService := service.NewOrderService(orderPublisher, scripts, orderRepo, warmupDBRepo)
+	stockService := service.NewStockService(cache.Rdb, stockRepo)
 	resultService := service.NewOrderResultService(orderRepo)
 
 	// init Router/Gin http server
+	warmupHandler := handler.NewWarmUpHandler(warmupService)
 	orderHandler := handler.NewOrderHandler(orderService)
 	stockHandler := handler.NewStockHandler(stockService)
 	resultHandler := handler.NewOrderResultHandler(resultService)
 	r := router.SetupRouter(
+		warmupHandler,
 		orderHandler,
 		stockHandler,
 		resultHandler,

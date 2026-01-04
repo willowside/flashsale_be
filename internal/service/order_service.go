@@ -6,6 +6,7 @@ import (
 	"flashsale/internal/repository/repositoryiface"
 	"flashsale/internal/service/serviceiface"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -31,20 +32,38 @@ type PrecheckResult struct {
 
 // OrderService: Precheck logic + put request into Queue
 type OrderService struct {
-	lua       *cache.LuaScripts
-	repo      repositoryiface.OrderRepository
-	publisher serviceiface.OrderPublisher
+	lua           *cache.LuaScripts
+	repo          repositoryiface.OrderRepository
+	publisher     serviceiface.OrderPublisher
+	flashSaleRepo repositoryiface.FlashSaleRepository
 }
 
-func NewOrderService(pub serviceiface.OrderPublisher, lua *cache.LuaScripts, repo repositoryiface.OrderRepository) *OrderService {
+func NewOrderService(pub serviceiface.OrderPublisher, lua *cache.LuaScripts, repo repositoryiface.OrderRepository, flashSaleRepo repositoryiface.FlashSaleRepository) *OrderService {
 	return &OrderService{
-		repo:      repo,
-		publisher: pub,
-		lua:       lua,
+		repo:          repo,
+		publisher:     pub,
+		lua:           lua,
+		flashSaleRepo: flashSaleRepo,
 	}
 }
 
 func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID string) (*PrecheckResult, error) {
+	// 0 Flash Sale Window Gate
+	fs, err := s.flashSaleRepo.GetActiveFlashSale(ctx)
+	if err != nil || fs == nil {
+		return &PrecheckResult{
+			Status:  "not_started",
+			Message: "flash sale not active",
+		}, nil
+	}
+
+	if !fs.IsActive(time.Now()) {
+		return &PrecheckResult{
+			Status:  "not_started",
+			Message: "flash sale not in window",
+		}, nil
+	}
+
 	// 1. redis precheck
 	res, err := cache.FlashSalePreCheck(productID, userID)
 	if err != nil {
@@ -56,21 +75,18 @@ func (s *OrderService) PreCheckAndQueue(ctx context.Context, userID, productID s
 			Status:  res.Reason,
 			Message: "precheck failed",
 		}, nil
-
-		// switch res.Reason {
-		// case "OUT_OF_STOCK", "STOCK_NOT_FOUND":
-		// 	return &PrecheckResult{Status: "no_stock", Message: "product out of stock"}, nil
-		// case "USER_ALREADY_PURCHASED", "USER_ALREADY_BOUGHT":
-		// 	return &PrecheckResult{Status: "already_purchased", Message: "user already purchased"}, nil
-		// default:
-		// 	return &PrecheckResult{Status: "error", Message: "precheck failed: " + res.Reason}, nil
-		// }
 	}
+	// get promotional price from flash_sale_products table
+	fsp, err := s.flashSaleRepo.GetFlashSaleProduct(ctx, fs.ID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch flash sale product details: %w", err)
+	}
+
 	// 2. gen OrderID
 	orderID := uuid.New().String()
 
 	// 3. create PENDING order in DB
-	err = s.repo.CreatePendingOrder(ctx, orderID, userID, productID)
+	err = s.repo.CreatePendingOrder(ctx, orderID, userID, productID, fs.ID, fsp.SalePrice)
 	if err != nil {
 		return nil, fmt.Errorf("create pending order failed: %w", err)
 	}

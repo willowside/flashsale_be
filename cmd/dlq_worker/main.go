@@ -6,6 +6,7 @@ import (
 	"flashsale/internal/cache"
 	"flashsale/internal/dto"
 	"flashsale/internal/repository"
+	"flashsale/internal/repository/redis"
 	"flashsale/internal/service"
 	"flashsale/internal/worker"
 	"flashsale/pkg/config"
@@ -42,7 +43,8 @@ func main() {
 
 	// dependencies
 	repo := repository.NewOrderRepository(db.Pool, "postgres")
-	compensator := service.NewOrderCompensator(repo)
+	redisStockRepo := redis.NewRedisStockRepo(cache.Rdb)
+	compensator := service.NewOrderCompensator(repo, redisStockRepo)
 	dlqWorker := worker.NewDLQWorker(compensator)
 	log.Println("DLQ worker started")
 

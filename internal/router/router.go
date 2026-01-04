@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(orderHandler *handler.OrderHandler, stockHandler *handler.StockHandler, resultHandler *handler.OrderResultHandler) *gin.Engine {
+func SetupRouter(warmUpHandler *handler.WarmUpHandler, orderHandler *handler.OrderHandler, stockHandler *handler.StockHandler, resultHandler *handler.OrderResultHandler) *gin.Engine {
 	r := gin.Default()
 
 	// // load token bucket lua
@@ -49,6 +49,10 @@ func SetupRouter(orderHandler *handler.OrderHandler, stockHandler *handler.Stock
 
 	}
 
-	// TODO; add endpoints /flashsale/queue, /flashsale/stock
+	admin := r.Group("/admin")
+	{
+		// POST /admin/flashsales/{id}/warmup
+		admin.POST("/flashsales/:id/warmup", warmUpHandler.WarmUp)
+	}
 	return r
 }

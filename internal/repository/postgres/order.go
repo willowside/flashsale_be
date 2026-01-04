@@ -5,6 +5,7 @@ import (
 	"flashsale/internal/cache"
 	"flashsale/internal/domain"
 	"flashsale/internal/repository/repositoryiface"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,12 +32,12 @@ func (r *OrderPGRepo) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return r.Pool.Begin(ctx)
 }
 
-func (r *OrderPGRepo) CreatePendingOrder(ctx context.Context, orderNo, userID, productID string) error {
+func (r *OrderPGRepo) CreatePendingOrder(ctx context.Context, orderNo, userID, productID string, flashSaleID int64, price int) error {
 	_, err := r.Pool.Exec(ctx, `
-		INSERT INTO orders (order_no, user_id, product_id, status)
-		VALUES ($1, $2, $3, 'pending')
+		INSERT INTO orders (order_no, user_id, product_id, flash_sale_id, price, status)
+		VALUES ($1, $2, $3, $4, $5, 'pending')
 		ON CONFLICT (order_no) DO NOTHING;
-	`, orderNo, userID, productID)
+	`, orderNo, userID, productID, flashSaleID, price)
 	return err
 }
 
@@ -71,7 +72,7 @@ func (r *OrderPGRepo) GetByOrderNo(ctx context.Context, orderNo string) (*domain
 func (r *OrderPGRepo) ReduceStockTx(ctx context.Context, tx pgx.Tx, productID string, qty int64) (bool, error) {
 
 	res, err := tx.Exec(ctx,
-		`UPDATE products SET stock = stock - $2 WHERE id = $1 AND stock >= $2`,
+		`UPDATE flash_sale_products SET sale_stock = sale_stock - $2 WHERE product_id = $1 AND sale_stock >= $2`,
 		productID, qty)
 	if err != nil {
 		return false, err
@@ -83,7 +84,7 @@ func (r *OrderPGRepo) ReduceStockTx(ctx context.Context, tx pgx.Tx, productID st
 func (r *OrderPGRepo) GetStock(ctx context.Context, productID string) (int64, error) {
 	var stock int64
 	err := r.Pool.QueryRow(ctx,
-		`SELECT stock FROM products WHERE id = $1`, productID).Scan(&stock)
+		`SELECT sale_stock FROM flash_sale_products WHERE product_id = $1`, productID).Scan(&stock)
 	return stock, err
 }
 
@@ -115,20 +116,22 @@ func (r *OrderPGRepo) MarkOrderSuccessTx(ctx context.Context, tx pgx.Tx, orderNo
 }
 
 func (r *OrderPGRepo) MarkOrderFailedTx(ctx context.Context, tx pgx.Tx, orderNo string, reason string) error {
+	fmt.Printf("MarkOrderFailedTx - fail_reason: %s", reason)
 	_, err := tx.Exec(ctx, `
 		UPDATE orders
-		SET status = 'failed', canceled_at = NOW()
+		SET status = 'failed', fail_reason = $2, canceled_at = NOW()
 		WHERE order_no = $1 AND status = 'pending'
-	`, orderNo)
+	`, orderNo, reason)
 	return err
 }
 
 func (r *OrderPGRepo) MarkOrderFailed(ctx context.Context, orderNo string, reason string) error {
+	fmt.Printf("MarkOrderFailed - fail_reason: %s", reason)
 	_, err := r.Pool.Exec(ctx, `
 		UPDATE orders
-		SET status = 'failed', canceled_at = NOW()
+		SET status = 'failed', fail_reason = $2, canceled_at = NOW()
 		WHERE order_no = $1
 		  AND status = 'pending'
-	`, orderNo)
+	`, orderNo, reason)
 	return err
 }

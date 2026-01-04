@@ -47,6 +47,10 @@ func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) error {
 		return errors.New("lua scripts not loaded")
 	}
 
+	if msg.UserID == "force-fail" {
+		return errors.New("forced failure for DLQ test")
+	}
+
 	// 1. redis lua finalize (prevent duplicated purchasing)
 	lua := p.LuaScripts.FinalizeSHA
 	userSetKey := fmt.Sprintf("flashsale:purchased:%s", msg.ProductID)

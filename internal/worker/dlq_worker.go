@@ -22,6 +22,6 @@ func (w *DLQWorker) Handle(ctx context.Context, msg dto.DLQMessage) {
 	// 1. mark DB order FAILED
 	w.compensator.Compensate(ctx, msg)
 	// 2. update redis cache
-	key := fmt.Sprintf("falshsale:order:%s", msg.OrderNo)
+	key := fmt.Sprintf("flashsale:order:%s", msg.OrderNo)
 	cache.Rdb.HSet(ctx, key, "status", "FAILED")
 }

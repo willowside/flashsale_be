@@ -13,14 +13,14 @@ type StockService interface {
 }
 
 type stockerService struct {
-	rdb         *redis.Client
-	productRepo repositoryiface.ProductRepository
+	rdb       *redis.Client
+	stockRepo repositoryiface.StockRepository
 }
 
-func NewStockService(rdb *redis.Client, productRepo repositoryiface.ProductRepository) StockService {
+func NewStockService(rdb *redis.Client, stockRepo repositoryiface.StockRepository) StockService {
 	return &stockerService{
-		rdb:         rdb,
-		productRepo: productRepo,
+		rdb:       rdb,
+		stockRepo: stockRepo,
 	}
 }
 
@@ -33,7 +33,7 @@ func (s *stockerService) GetStock(ctx context.Context, productID int64) (int64, 
 	}
 
 	// 2. DB fallback
-	stock, err := s.productRepo.GetStock(ctx, productID)
+	stock, err := s.stockRepo.GetStock(ctx, productID)
 	if err != err {
 		return 0, err
 	}
