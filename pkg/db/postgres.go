@@ -16,7 +16,7 @@ func InitPostgresDB(host, port, user, password, db_name, ssl_mode string) error 
 	var err error
 	var pool *pgxpool.Pool
 
-	// 💡 嘗試連線多次，總共等待約 30 秒
+	// 嘗試連線多次，總共等待約 30 秒
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 

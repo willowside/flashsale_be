@@ -20,15 +20,19 @@ func main() {
 	dlqQueue := "flashsale_order_dlq"
 
 	// infra
-	_ = db.InitPostgresDB(
+	if err := db.InitPostgresDB(
 		cfg.PostgresHost,
 		cfg.PostgresPort,
 		cfg.PostgresUser,
 		cfg.PostgresPassword,
 		cfg.PostgresDBName,
 		cfg.PostgresSSLMode,
-	)
-	_ = cache.InitRedis(cfg.RedisHost, cfg.RedisPort, "", 0)
+	); err != nil {
+		log.Fatalf("Postgres init failed after retry: %v", err)
+	}
+	if err := cache.InitRedis(cfg.RedisHost, cfg.RedisPort, "", 0); err != nil {
+		log.Fatalf("Redis init failed: %v", err)
+	}
 
 	mqClient, err := mq.NewRabbitMQClient(cfg.MQUrl, dlqQueue)
 	if err != nil {
@@ -53,20 +57,17 @@ func main() {
 		var msg dto.DLQMessage
 		if err := json.Unmarshal(d.Body, &msg); err != nil {
 			log.Println("[DLQ] invalid message:", err)
-			_ = d.Ack(false) // Ack when parse error
+			_ = d.Ack(false) // Ack & discard when parse error, to avoid infinite loop
 			continue
 		}
-
-		// err := compensator.
 
 		err := dlqWorker.Handle(context.Background(), msg)
 		if err != nil {
 			log.Printf("[DLQ] compensation failed: %v", err)
-			// compensation failed, Nack to requeue(or logging)
-			_ = d.Nack(false, true)
+			d.Ack(false)
 		} else {
 			_ = d.Ack(false) // Ack when compensation success
-			log.Panicln("[DLQ] compensation success, Ack")
+			log.Println("[DLQ] compensation success, Ack")
 		}
 
 	}

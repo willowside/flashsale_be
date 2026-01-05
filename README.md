@@ -1,44 +1,76 @@
 ## High-Concurrency Flash Sale System ##
-  This is a Flash Sale system built with Golang. Not just a simple CRUD, this project focus on how to handle high concurrency, data consistency, and observability.
+This is a Flash Sale system built with Golang. Not just a simple CRUD, this project focus on how to handle high concurrency, data consistency, and observability.
 
 ### Key Improvements & Progress ###
-  I have updated the system architecture from a simple version to a distributed containerized version. Here are the key things I did:
-  * Fixed Panic & Nil Pointer: Added recovery middleware and nil check in order_handler.go so the API won't crash when result is nil.
-  * Refactor to Gatekeeper Pattern: Changed the logic from "pre-deduct in Redis" to Gatekeeper Pattern. Now Lua script only checks stock and user purchase record but doesn't DECR. This fixed the issue where Redis stock becomes 0 but DB still has stock.
-  * Worker Scaling: Containerized the app and used docker-compose to scale to 3~10 workers. This solved the MQ pending message issue (was 2.9w+ messages stuck) and improved processing speed.
-  * DLQ & Compensator: Added Dead Letter Queue and a Compensator worker. When force-fail happens, it will catch the error and do IncrStock in Redis to recover the stock.
+I have updated the system architecture from a simple version to a distributed containerized version. Here are the key things I did:
+
+* **Fixed Panic & Nil Pointer**: In the beginning, high traffic caused the API to crash because of nil pointer errors. I added recovery middleware and strict nil checks in `order_handler.go` so the API stays alive even if something goes wrong.
+* **Refactor to Gatekeeper Pattern**: I changed the logic from "deducting stock in Redis" to a **Gatekeeper Pattern**. Now, the Lua script only checks if there is still stock and if the user already bought it, but it **doesn't** decrease the number in Redis. This ensures the Database is the only "Source of Truth" and fixed the issue where Redis and DB numbers didn't match.
+* **Worker Scaling with Docker**: When I had 2.9w+ messages stuck in RabbitMQ, one worker was too slow (0.4/s). I containerized the app and used `docker-compose --scale` to run 3~10 workers at the same time. This cleared the backlog much faster.
+* **DLQ & Compensator**: I added a **Dead Letter Queue (DLQ)** to catch failed orders (like the `force-fail` test). If a worker fails to process an order, the Compensator worker will take the message from DLQ and put the stock back into Redis (`IncrStock`) so other users can buy it.
+
+
 
 ### System Architecture ###
-  Backend: Golang (Gin)
-  DB: PostgreSQL (pgxpool)
-  Cache: Redis (Lua Scripting)
-  MQ: RabbitMQ (DLQ logic)
-  Observability: Grafana, Prometheus, cAdvisor (to see worker CPU)
+* **Backend**: Golang (Gin framework)
+* **DB**: PostgreSQL (using pgxpool for stable connections)
+* **Cache**: Redis (using Lua scripts for atomic checks)
+* **MQ**: RabbitMQ (handling traffic shaving and DLQ logic)
+* **Observability**: Grafana, Prometheus, and cAdvisor (to monitor if 10 workers are sharing the load)
 
 ### 📊 Final K6 Test Result (Showcase) ###
-#### Below is the result of 200 VUs test after I scaled the workers: (k6 screenshot) ####
-* P95 Latency: 11.83ms (very fast because of Gatekeeper pattern)
-* HTTP Req Failed: ~14% (Expected 409/429, no 500 error)
-* MQ Result: Handled 4.5w+ requests. Even when MQ is piling up, DB is safe because of traffic shaving.
+#### Below is the result of 300 VUs test after I scaled the workers: ####
+
+*![k6 Result](images/k6_result.png)*
+*![Grafana dashboard](images/k6_result_grafana.png)*
+```plaintext Monitoring during 300 VUs stress test: P95 latency remains stable at 33ms despite the massive request spike. ```
+
+After scaling to 10 Workers and increasing the load to 300 Concurrent Virtual Users (VUs), the system reached a new performance milestone.
+
+* **Test Scenario**:
+VUs: 300 (Simulating 300 people clicking "Buy" constantly)
+
+  **Duration**: 35 seconds
+  **Total Requests**: 97,858
+
+* **Key Performance Metrics**:
+  **Throughput (RPS)**: 2,795 Requests/Second (Solid performance under high pressure)
+  **P95 Latency**: 33.75ms (Fast and smooth response time)
+  **Success Rate**: Handled ~83,000 successful pre-checks (200 OK).
+
+* **Security & Stability**:
+  Successfully filtered ~14,700 excessive requests via Rate Limiting (429) and Sold Out (409) logic.
+  0% System Crashes: No 500 Internal Server Errors were detected.
+
+* **What this proves**:
+  * Efficient Traffic Shaving: Even when 9.7w+ requests hit the API in a very short time, the RabbitMQ + 10 Workers architecture prevented the PostgreSQL database from being overwhelmed.
+
+  * Worker Elasticity: Increasing the worker count from 3 to 10 directly improved the system's ability to clear the message queue, proving the system is ready for Horizontal Scaling.
+
+  * Gatekeeper Reliability: The Redis Lua scripts effectively managed the "First Line of Defense," ensuring only valid requests reached the heavy database operations.
+
 
 ### Project Structure ###
 ```plaintext
 .
 ├── cmd/
-│   ├── api/            # API entry
-│   ├── worker/         # Order worker (can scale)
-│   └── dlq_worker/     # DLQ recovery worker
+│   ├── api/            # Entry point for the REST API
+│   ├── worker/         # Background worker to process orders (can scale up)
+│   └── dlq_worker/     # Special worker for error recovery (DLQ)
 ├── internal/
-│   ├── handler/        # Handler with nil-pointer fix
-│   ├── service/        # Business logic with retry
-│   ├── repository/     # Postgres & Redis implementation
-│   └── worker/         # Order Processor core logic
-├── scripts/            # Lua scripts (Gatekeeper & Finalize)
-├── k6/                 # Load test scripts
-└── docker-compose.yaml # Docker config with 3 replicas
+│   ├── handler/        # API routes and nil-pointer protection
+│   ├── service/        # Core logic (ordering and compensation)
+│   ├── repository/     # Handling data in Postgres and Redis
+│   └── worker/         # The actual logic for processing MQ messages
+├── scripts/            # Lua scripts and k6 test files
+└── docker-compose.yaml # Full setup to run DB, MQ, and scaled workers
 ```
+
 ### TODO / Next Steps ###
-  * Advanced Error Handling: Implement error classification to distinguish between Transient Errors (e.g., temporary DB downtime) and Permanent Errors (e.g., malformed poison messages). This will allow the system to safely requeue messages for retry or discard invalid data to prevent infinite loops.
-  * Local Cache: Add BigCache to reduce Redis load and network overhead.
-  * Distributed Tracing: Use Jaeger to observe the whole request lifecycle from API to MQ and Workers.
-  * Dynamic Rate Limiter: Automatically adjust the token bucket rate based on system CPU and memory usage.
+* Smart Error Handling: Right now, if the DLQ worker fails, it just logs and Acks to avoid infinite loops (Poison Messages). Next step is to distinguish between Transient Errors (DB is temporarily down, so try again later) and Permanent Errors (Bad data, just discard it).
+
+* Local Cache: Add BigCache inside the API to store product info. This will reduce the number of times the API needs to talk to Redis.
+
+* Tracing: Use Jaeger to see the full "life of a request" from the moment a user clicks "Buy" to when the order is saved in the DB.
+
+* Dynamic Limiter: Make the rate limiter smarter so it can slow down traffic automatically if the server CPU gets too high.

@@ -43,7 +43,7 @@ func (c *OrderCompensator) Compensate(ctx context.Context, msg dto.DLQMessage) e
 		return fmt.Errorf("failed to mark order as failed=%s, err=%v", msg.OrderNo, err)
 	}
 	// 3. restore stock
-	productID := msg.Payload.UserID
+	productID := msg.Payload.ProductID
 	log.Printf("[Compensator] run redis stock compensate: ProductID=%d", productID)
 	if err := c.redisStockRepo.RestoreStock(ctx, strconv.FormatInt(msg.Payload.ProductID, 10), 1); err != nil {
 		log.Printf("[Compensator ERROR] restore stock failed order =%s, product=%d, err=%v", msg.OrderNo, msg.Payload.ProductID, err)
