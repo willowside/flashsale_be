@@ -1,5 +1,47 @@
 ## High-Concurrency Flash Sale System ##
-This is a Flash Sale system built with Golang. Not just a simple CRUD, this project focus on how to handle high concurrency, data consistency, and observability.
+This project is a high-concurrency flash sale backend system designed to handle sudden traffic spikes while maintaining data consistency across Redis, PostgreSQL, and RabbitMQ.
+The system focuses on correctness under failure, not just throughput.
+
+## 1. System Overview ##
+#### Core Goals ####
+
+* Prevent overselling under high concurrency
+* Keep PostgreSQL as the single source of truth
+* Use Redis only as admission control + cache
+* Gracefully handle failures via Retry + DLQ + Compensation
+* Be testable and observable via warm-up + k6 load testing
+
+## 2. High-Level Architecture ##
+
+```plaintext
+.
+Client
+  |
+  |  HTTP /precheck
+  v
+API Server
+  |
+  |  publish order message
+  v
+RabbitMQ (Order Queue)
+  |
+  |  consume
+  v
+Order Worker
+  |
+  |-- Redis Gatekeeper (Lua, check-only)
+  |-- PostgreSQL Transaction (stock deduction)
+  |-- Redis Sync (after DB commit)
+  |
+  |-- Retry (transient error)
+  |-- DLQ (unrecoverable error)
+        |
+        v
+     DLQ Worker
+        |
+        |-- Mark order FAILED
+        |-- Restore Redis stock
+```
 
 ### Key Improvements & Progress ###
 I have updated the system architecture from a simple version to a distributed containerized version. Here are the key things I did:
