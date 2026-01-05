@@ -29,8 +29,8 @@ if exists == 1 then
     return {0, "USER_ALREADY_PURCHASED"}
 end
 
--- Deduct to Preserve stock
-redis.call("DECR", stock_key)
+-- -- Deduct to Preserve stock
+-- redis.call("DECR", stock_key)
 
 -- Success callback
 return {1, "OK"}

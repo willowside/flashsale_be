@@ -4,6 +4,7 @@ import (
 	"context"
 	"flashsale/internal/dto"
 	"flashsale/internal/repository/repositoryiface"
+	"fmt"
 	"log"
 	"strconv"
 )
@@ -23,14 +24,33 @@ func NewOrderCompensator(
 	}
 }
 
-func (c *OrderCompensator) Compensate(ctx context.Context, msg dto.DLQMessage) {
-	// 1. mark order failed
+func (c *OrderCompensator) Compensate(ctx context.Context, msg dto.DLQMessage) error {
+	log.Printf("[Compensator] start compensate: OrderNo=%s, Reason=%s", msg.OrderNo, msg.Reason)
+	// 1. Idempotency: check DB order status
+	status, err := c.orderRepo.GetOrderStatus(ctx, msg.OrderNo)
+	if err != nil {
+		return err
+	}
+
+	// if already SUCCESS/FAILED, no compensation
+	if status == "success" || status == "failed" {
+		log.Printf("[Compensator] order %s already processed, skip compensation", msg.OrderNo)
+		return nil
+	}
+
+	// 2. mark order failed
 	if err := c.orderRepo.MarkOrderFailed(ctx, msg.OrderNo, msg.Reason); err != nil {
-		log.Printf("[DLQ] mark failed order=%s, err=%v", msg.OrderNo, err)
+		return fmt.Errorf("failed to mark order as failed=%s, err=%v", msg.OrderNo, err)
 	}
-	// 2. restore stock
+	// 3. restore stock
+	productID := msg.Payload.UserID
+	log.Printf("[Compensator] run redis stock compensate: ProductID=%d", productID)
 	if err := c.redisStockRepo.RestoreStock(ctx, strconv.FormatInt(msg.Payload.ProductID, 10), 1); err != nil {
-		log.Printf("[DLQ] restore stock failed order =%s, product=%d, err=%v", msg.OrderNo, msg.Payload.ProductID, err)
+		log.Printf("[Compensator ERROR] restore stock failed order =%s, product=%d, err=%v", msg.OrderNo, msg.Payload.ProductID, err)
+		return err
 	}
+
+	log.Printf("[Compensator] compensation success: OrderNo=%s", msg.OrderNo)
+	return nil
 
 }

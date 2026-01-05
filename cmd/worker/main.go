@@ -95,43 +95,55 @@ func main() {
 				return
 			}
 
-			err := service.Retry(3, func() error {
+			var orderMsg dto.OrderMessage
+			processErr := service.Retry(3, func() error {
 				// create a fresh timeout per attempt
 				jobCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				return orderProcessor.ProcessOrder(jobCtx, d.Body)
 			})
 
-			if err != nil {
-				switch err {
-				case worker.ErrOutOfStock, worker.ErrLuaReject:
-					// business logic failure -> order already marked FAILED inside processor
+			if processErr != nil {
+				// parse order message for DLQ
+				if unmarshalErr := json.Unmarshal(d.Body, &orderMsg); unmarshalErr != nil {
+					log.Printf("[Worker] Unmarshal failed: %v, message dropped", unmarshalErr)
 					_ = d.Ack(false)
 					continue
+				}
+
+				switch processErr {
+				case worker.ErrOutOfStock, worker.ErrLuaReject:
+					// business logic failure -> order already marked FAILED inside processor
+					// should have done in orderProcessor, no compensation needed so Ack directly
+					log.Printf("[Worker] Business logic rejected: %v", processErr)
+					_ = d.Ack(false)
 
 				default:
-					log.Printf("[DLQ] order processing failed: %v", err)
+					// system failure or force-fail
+					log.Printf("[DLQ] order processing failed, sending to DLQ: %v", processErr)
 
-					var orderMsg dto.OrderMessage
-					if err := json.Unmarshal(d.Body, &orderMsg); err != nil {
-						log.Printf("[DLQ] failed to unmarshal order message: %v", err)
-						_ = d.Ack(false)
-						continue
-					}
-
-					_ = dlqPublisher.Publish(ctx, dto.DLQMessage{
+					dlqMsg := dto.DLQMessage{
 						OrderNo: orderMsg.OrderID,
-						Reason:  err.Error(),
+						Reason:  processErr.Error(),
 						Payload: dto.QueueOrderReq{
 							OrderNo:   orderMsg.OrderID,
 							UserID:    orderMsg.UserID,
 							ProductID: mustParseProductID(orderMsg.ProductID),
 						},
-					})
-					_ = d.Ack(false)
-					continue
+					}
+					if err := dlqPublisher.Publish(ctx, dlqMsg); err != nil {
+						log.Printf("[DLQ Critical] Failed to publish to DLQ: %v", err)
+						// if DLQ failed as well, No Ack, let  message retry in queue (Unacked)
+						_ = d.Nack(false, true)
+					} else {
+						log.Printf("[DLQ] Success published Order: %s", orderMsg.OrderID)
+						_ = d.Ack(false)
+					}
 				}
+				continue
 			}
+			// Success
+			log.Printf("[Worker] Order processed successfully: %s", orderMsg.OrderID)
 			_ = d.Ack(false)
 		}
 	}

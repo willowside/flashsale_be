@@ -44,14 +44,15 @@ func (h *OrderHandler) PreCheck(c *gin.Context) {
 
 	result, err := h.svc.PreCheckAndQueue(ctx, userID, productID)
 	if err != nil {
+		// result might be nil
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  result.Status,
-			"message": result.Message,
+			"status":  "error",
+			"message": "internal server error",
 			"error":   err.Error(),
 		})
 		return
 	}
-
+	// only access result if no error
 	c.JSON(http.StatusOK, gin.H{
 		"status":   result.Status,
 		"message":  result.Message,

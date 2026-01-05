@@ -49,14 +49,25 @@ func main() {
 	log.Println("DLQ worker started")
 
 	for d := range consumer {
+		log.Printf("[DLQ] message received: %s", string(d.Body))
 		var msg dto.DLQMessage
 		if err := json.Unmarshal(d.Body, &msg); err != nil {
 			log.Println("[DLQ] invalid message:", err)
-			_ = d.Ack(false)
+			_ = d.Ack(false) // Ack when parse error
 			continue
 		}
 
-		dlqWorker.Handle(context.Background(), msg)
-		_ = d.Ack(false)
+		// err := compensator.
+
+		err := dlqWorker.Handle(context.Background(), msg)
+		if err != nil {
+			log.Printf("[DLQ] compensation failed: %v", err)
+			// compensation failed, Nack to requeue(or logging)
+			_ = d.Nack(false, true)
+		} else {
+			_ = d.Ack(false) // Ack when compensation success
+			log.Panicln("[DLQ] compensation success, Ack")
+		}
+
 	}
 }

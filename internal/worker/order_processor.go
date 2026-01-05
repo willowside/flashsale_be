@@ -8,6 +8,8 @@ import (
 	"flashsale/internal/dto"
 	"flashsale/internal/repository/repositoryiface"
 	"fmt"
+	"log"
+	"time"
 )
 
 var (
@@ -27,12 +29,33 @@ func NewOrderProcessor(repo repositoryiface.OrderRepository, lua *cache.LuaScrip
 // 1. deal ONE order
 // 2. return err -> worker decides retry/DLQ
 
-func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) error {
+func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) (err error) {
 	var msg dto.OrderMessage
 
 	if err := json.Unmarshal(body, &msg); err != nil {
 		return fmt.Errorf("invalid message: %w", err)
 	}
+
+	// add timeout check: if old message 1h ago, skip
+	msgTime := time.Unix(msg.Timestamp, 0)
+	if time.Since(msgTime) > 1*time.Hour {
+		log.Printf("[Worker] Discard expired message: %s", msg.OrderID)
+		return nil
+	}
+
+	if msg.UserID == "force-fail" {
+		log.Printf("[Worker] trigger force fail test: OrderID=%s", msg.OrderID)
+		return errors.New("forced failure for DLQ test")
+	}
+
+	defer func() {
+		if err != nil {
+			// DB failed -> restore redis
+			key := fmt.Sprintf("flashsale:stock:%s", msg.ProductID)
+			_ = cache.Rdb.IncrBy(context.Background(), key, 1)
+		}
+
+	}()
 
 	// 0. Idempotency check
 	status, err := p.Repo.GetOrderStatus(ctx, msg.OrderID)
@@ -45,10 +68,6 @@ func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) error {
 
 	if p.LuaScripts == nil || p.LuaScripts.PrecheckSHA.SHA == "" {
 		return errors.New("lua scripts not loaded")
-	}
-
-	if msg.UserID == "force-fail" {
-		return errors.New("forced failure for DLQ test")
 	}
 
 	// 1. redis lua finalize (prevent duplicated purchasing)
@@ -83,6 +102,10 @@ func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) error {
 		return fmt.Errorf("[worker] reduce stock failed: %w", err)
 	}
 	if !success {
+		// db no stock, set redis to 0 (sync)
+		key := fmt.Sprintf("flashsale:stock:%s", msg.ProductID)
+		_ = cache.Rdb.Set(ctx, key, 0, 0)
+
 		_ = p.Repo.MarkOrderFailedTx(ctx, tx, msg.OrderID, "OUT_OF_STOCK")
 		_ = tx.Commit(ctx)
 		return ErrOutOfStock
@@ -92,7 +115,10 @@ func (p *OrderProcessor) ProcessOrder(ctx context.Context, body []byte) error {
 	err = p.Repo.MarkOrderSuccessTx(ctx, tx, msg.OrderID)
 	if err != nil {
 		return fmt.Errorf("[worker] create order failed: %w", err)
-
 	}
+
+	key := fmt.Sprintf("flashsale:stock:%s", msg.ProductID)
+	_ = cache.Rdb.Decr(ctx, key)
+
 	return tx.Commit(ctx)
 }

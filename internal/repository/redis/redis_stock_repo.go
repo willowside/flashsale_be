@@ -20,5 +20,5 @@ func NewRedisStockRepo(rdb *redis.Client) repositoryiface.RedisStockRepository {
 
 func (r *RedisStockRepository) RestoreStock(ctx context.Context, productID string, qty int) error {
 	key := fmt.Sprintf("flashsale:stock:%s", productID)
-	return r.rdb.IncrBy(ctx, key, int64(qty)).Err()
+	return r.rdb.Incr(ctx, key).Err()
 }
