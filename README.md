@@ -21,9 +21,9 @@ I have updated the system architecture from a simple version to a distributed co
 ### 📊 Final K6 Test Result (Showcase) ###
 #### Below is the result of 300 VUs test after I scaled the workers: ####
 
-*![k6 Result](images/k6_result.png)*
-*![Grafana dashboard](images/k6_result_grafana.png)*
-```plaintext Monitoring during 300 VUs stress test: P95 latency remains stable at 33ms despite the massive request spike. ```
+*![k6 Result](image/k6_result.png)*
+*![Grafana dashboard](image/k6_result_grafana.png)*
+Monitoring during 300 VUs stress test: P95 latency remains stable at 33ms despite the massive request spike.
 
 After scaling to 10 Workers and increasing the load to 300 Concurrent Virtual Users (VUs), the system reached a new performance milestone.
 
