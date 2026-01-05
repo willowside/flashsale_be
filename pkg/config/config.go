@@ -26,17 +26,16 @@ func LoadConfig() *Config {
 
 	cfg := &Config{
 		ServerPort:       getEnv("SERVER_PORT", "8080"),
-		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
+		PostgresHost:     getEnv("POSTGRES_HOST", "postgres"),
 		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
-		PostgresUser:     getEnv("POSTGRES_USER", "postgres"),
-		PostgresPassword: getEnv("POSTGRES_PASSWORD", "postgres"),
+		PostgresUser:     getEnv("POSTGRES_USER", "user"),
+		PostgresPassword: getEnv("POSTGRES_PASSWORD", "password"),
 		PostgresDBName:   getEnv("POSTGRES_DB", "flashsale"),
 		PostgresSSLMode:  getEnv("POSTGRES_SSLMODE", "disable"),
-		// PostgresDSN:      getEnv("POSTGRES_DSN", "postgres://user:pass@localhost:5432/flashsale?sslmode=disable"),
-		RedisHost:     getEnv("REDIS_HOST", "localhost"),
-		RedisPort:     getEnv("REDIS_PORT", "6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		MQUrl:         getEnv("MQ_URL", "amqp://guest:guest@localhost:5672/"),
+		RedisHost:        getEnv("REDIS_HOST", "redis"),
+		RedisPort:        getEnv("REDIS_PORT", "6379"),
+		RedisPassword:    getEnv("REDIS_PASSWORD", ""),
+		MQUrl:            getEnv("MQ_URL", "amqp://guest:guest@rabbitmq:5672/"),
 	}
 
 	return cfg

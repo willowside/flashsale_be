@@ -1,30 +1,40 @@
-version: '3.9'
+version: '3.8'
 
 services:
+  # ---------------------------------------------------------
+  # Infrastructure Services
+  # ---------------------------------------------------------
+  # postgres:
+  #   image: postgres:15-alpine
+  #   environment:
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_DB: flashsale
+  #   ports:
+  #     - "5432:5432"
+
   postgres:
     image: postgres:16
-    container_name: flashsale_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: flashsale
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U user -d flashsale"]
+          interval: 5s
+          timeout: 5s
+          retries: 5
 
   redis:
-    image: redis:7
-    container_name: flashsale_redis
-    restart: unless-stopped
+    image: redis:7-alpine
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
 
   rabbitmq:
-    image: rabbitmq:3-management
-    container_name: flashsale_rabbitmq
+    image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: guest
@@ -33,5 +43,36 @@ services:
       - "5672:5672"
       - "15672:15672" # Web UI
 
-volumes:
-  postgres_data:
+  # ---------------------------------------------------------
+  # Application Services
+  # ---------------------------------------------------------
+  api:
+    build: .
+    command: ["./api"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    env_file: .env
+
+  # order Worker (can be scaled)
+  order_worker:
+    build: .
+    command: ["./worker"]
+    deploy:
+      replicas: 3
+    depends_on:
+      - rabbitmq
+      - postgres
+    env_file: .env
+
+  # 補償機制 Worker
+  dlq_worker:
+    build: .
+    command: ["./dlq_worker"]
+    depends_on:
+      - rabbitmq
+      - redis
+    env_file: .env
