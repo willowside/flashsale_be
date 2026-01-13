@@ -109,10 +109,14 @@ VUs: 300 (Simulating 300 people clicking "Buy" constantly)
 ```
 
 ### TODO / Next Steps ###
-* Smart Error Handling: Right now, if the DLQ worker fails, it just logs and Acks to avoid infinite loops (Poison Messages). Next step is to distinguish between Transient Errors (DB is temporarily down, so try again later) and Permanent Errors (Bad data, just discard it).
+* Error Handling: Right now, if the DLQ worker fails, it just logs and Acks to avoid infinite loops (Poison Messages). Next step is to distinguish between Transient Errors (DB is temporarily down, so try again later) and Permanent Errors (Bad data, just discard it).
 
 * Local Cache: Add BigCache inside the API to store product info. This will reduce the number of times the API needs to talk to Redis.
 
-* Tracing: Use Jaeger to see the full "life of a request" from the moment a user clicks "Buy" to when the order is saved in the DB.
+* Logging & Tracing: Implement structured JSON logging and Jaeger tracing for cross-service debugging.
 
 * Dynamic Limiter: Make the rate limiter smarter so it can slow down traffic automatically if the server CPU gets too high.
+
+* Graceful Shutdown: Ensure workers finish current tasks before exiting to prevent data corruption.
+
+* Idempotency Guard: Strengthen worker logic to handle duplicate MQ messages safely.
